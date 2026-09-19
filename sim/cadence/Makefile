@@ -336,13 +336,16 @@ gui_waves:
 ## A plain `make run` / `make gui` does NOT produce an ida.db: the simulator
 ## must be invoked with the Indago database option, which `indago_run` does.
 ##
-## The simulator-side option is deliberately kept configurable and MUST be
-## verified against THIS installation, not assumed:
-##   make xrun_indago_check     # greps `xrun -help` for what it supports
-## INDAGO_DEBUG_OPTS below matches the documented post-process form
-## `-debug_opts +indago`; do not change it unless xrun -help shows otherwise.
+## The simulator-side option was VERIFIED against this installation's
+## `xrun -helpall` (see `make xrun_indago_check`).  22.09-s003 documents:
+##   -debug_opts <indago_pp|indago_interactive|indago_flow_recording>
+##   -indago                    Enable interactive debug with Indago
+## `indago_pp` runs the post-process Indago flow (produces ida.db), which is
+## what `indago_run` needs.  The legacy `-debug_opts +indago` form does NOT
+## exist in 22.09 (it fails with *E,OPT2ND); override INDAGO_DEBUG_OPTS
+## per-invocation only if a different installation documents otherwise.
 INDAGO ?= indago
-INDAGO_DEBUG_OPTS ?= +indago
+INDAGO_DEBUG_OPTS ?= indago_pp
 INDAGO_OPTS ?=
 
 ## Open a post-process Indago database in the GUI.
@@ -372,14 +375,14 @@ indago_help:
 	$(INDAGO) -help
 
 ## Verify what THIS xrun installation supports for Indago (do not guess).
-## Dumps the authoritative sections of `xrun -help` so the exact database
-## option can be chosen on this host.
+## The short `xrun -help` does not document per-option details, so this uses
+## `-helpall` (confirmed supported by xrun 22.09-s003's usage text).
 xrun_indago_check:
-	@echo ">> xrun -help: '-debug_opts' documentation block:";
-	@$(XRUN) -help 2>&1 | grep -i -A 16 'debug_opts' || echo "  (no '-debug_opts' entry in xrun -help)";
+	@echo ">> xrun -helpall: '-debug_opts' documentation block:"
+	@$(XRUN) -helpall 2>&1 | grep -i -A 16 'debug_opts' || echo "  (no '-debug_opts' entry in xrun -helpall)";
 	@echo "";
-	@echo ">> xrun -help: any lines mentioning indago:";
-	@$(XRUN) -help 2>&1 | grep -i -B 2 -A 8 indago || echo "  (no 'indago' lines in xrun -help)";
+	@echo ">> xrun -helpall: any lines mentioning indago:"
+	@$(XRUN) -helpall 2>&1 | grep -i -B 2 -A 8 indago || echo "  (no 'indago' lines in xrun -helpall)";
 
 ## List every Indago database (ida.db) below the current tree.
 find_db:
