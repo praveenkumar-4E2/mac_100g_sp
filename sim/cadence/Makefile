@@ -49,7 +49,15 @@ COVERAGE_DIR ?= coverage
 PLUSARGS ?=
 DEFINES ?=
 
-# -uvm  : compile/link against Xcelium's built-in UVM (macros + RAL).
+# UVM installation, pinned explicitly.  The automatic `-uvm` selection was
+# resolving to CDNS-1.1d on this host, so the library is pinned via
+# `-uvmhome`.  Override per-invocation if your install differs, e.g.:
+#   make compile UVM_HOME=/some/other/UVM/CDNS-1.2
+UVM_HOME ?= /home/install/XCELIUM2209/tools.lnx86/methodology/UVM/CDNS-1.2
+
+# -uvmhome $(UVM_HOME) : link against the pinned UVM library (see UVM_HOME).
+#   The automatic `-uvm` form is avoided: it selected CDNS-1.1d on this host.
+# +incdir+$(UVM_HOME)/sv/src : UVM header includes (uvm_macros.svh, ral).
 # -access +rwc : read/write/connect visibility for waveforms and txn logging.
 # -timescale 1ns/1ps : global default; several test files declare `timescale
 #   inside the package include chain (Cadence requires it outside design units).
@@ -60,8 +68,11 @@ DEFINES ?=
 #   @(vif.cb) and clocking skews); turn off Xcelium's 1800-2009 fallback so
 #   elaboration treats those constructs (not just opaque rvalues) correctly.
 # -elaborate : stops after elaboration (compile-checks only, no simulation).
-XRUN_BASE_OPTS = -uvm -f $(FILELIST) -top $(TOP) -access +rwc -timescale 1ns/1ps -nowarn NONPRT -nowarn NODNTW -nowarn TMSERX -disable_sem2009
+XRUN_BASE_OPTS = -uvmhome $(UVM_HOME) +incdir+$(UVM_HOME)/sv/src -f $(FILELIST) -top $(TOP) -access +rwc -timescale 1ns/1ps -nowarn NONPRT -nowarn NODNTW -nowarn TMSERX -disable_sem2009
 DEFINE_OPTS = $(foreach define,$(DEFINES),+define+$(define))
+# Extra xrun switches appended only by targets that opt in (run_existing based
+# flow).  `indago_run` uses it to add the Indago database option.  Default: none.
+XRUN_EXTRA_OPTS ?=
 COV_RUN_OPTS = -coverage all -covtest $(COVTEST) -covoverwrite
 COMPILE_LOG = $(LOG_DIR)/compile/mac_xrun_compile.log
 
@@ -149,7 +160,8 @@ CLEAN_TARGETS = $(WORK) csrc waves.shm cov_work $(LOG_DIR) $(RESULT_DIR) \
                 $(COVERAGE_DIR) *.log *.key *_??.??.????-??.??.??
 
 .PHONY: help all check compile run smoke run_cov cov_report coverage \
-        coverage_merge gui gui_waves audit regression clean
+        coverage_merge gui gui_waves audit regression clean \
+        indago indago_db indago_help xrun_indago_check find_db indago_run
 
 ## --------------------------- Default / Help ------------------------------
 
@@ -181,6 +193,13 @@ help:
 	@echo "I want to open the SimVision GUI to debug:";
 	@echo "  make gui TEST=mac_sanity_test_c";
 	@echo "";
+	@echo "I want to debug with Indago (post-process, Xcelium's debugger):";
+	@echo "  make xrun_indago_check              # what this xrun supports for Indago";
+	@echo "  make indago_run TEST=mac_apb_config_cdc_test_c   # sim -> creates ida.db";
+	@echo "  make find_db                        # list the ida.db databases found";
+	@echo "  make indago DB=./mac_apb_config_cdc_test_c_<ts>/ida.db   # open it";
+	@echo "  make indago_help                    # options supported by this indago";
+	@echo "";
 	@echo "I want to run a whole list of tests (regression):";
 	@echo "  make regression TESTLIST=../../src/hvl_top/testlists/full_regression.list";
 	@echo "  make regression TESTLIST=../../src/hvl_top/testlists/feature/pause_frame.list";
@@ -202,6 +221,12 @@ help:
 	@echo "  coverage_merge - merge collected cov_work dbs into one report";
 	@echo "  gui            - launch SimVision to debug interactively";
 	@echo "  gui_waves      - SimVision with the curated probe tcl (simvision.tcl)";
+	@echo "  indago_run     - batch sim that ALSO creates the Indago ida.db";
+	@echo "  indago         - open a database: indago -db DB=<path> (background)";
+	@echo "  indago_db      - alias of indago (same DB= argument)";
+	@echo "  indago_help    - help for the installed indago executable";
+	@echo "  find_db        - list ida.db databases under the current tree";
+	@echo "  xrun_indago_check - grep xrun -help for supported Indago options";
 	@echo "  regression     - run every test listed in TESTLIST";
 	@echo "  clean          - remove all generated files";
 	@echo "";
@@ -211,6 +236,8 @@ help:
 	@echo "  LOG_DIR=$(LOG_DIR)  RESULT_DIR=$(RESULT_DIR)  COVERAGE_DIR=$(COVERAGE_DIR)";
 	@echo "  ARTIFACT_ROOT=$(ARTIFACT_ROOT)  RUN_TIMESTAMP=$(RUN_TIMESTAMP)";
 	@echo "  RUN_XMLIB=$(RUN_XMLIB)  # private xrun run-context per run (parallel-safe)";
+	@echo "  UVM_HOME=$(UVM_HOME)  # pinned UVM install (-uvmhome)";
+	@echo "  DB=            # Indago database to open with 'make indago DB=<path>'";
 	@echo "======================================================================";
 	@echo "";
 
@@ -239,7 +266,7 @@ run:
 run_existing:
 	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
 	@start_epoch=$$(date +%s); \
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -xmlibdirname $(RUN_XMLIB) \
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) $(XRUN_EXTRA_OPTS) -xmlibdirname $(RUN_XMLIB) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG); sim_status=$$?; \
 	$(PYTHON) mac_result_summary.py capture --test $(TEST) --seed $(SEED) --log $(RUN_LOG) --result $(RESULT_FILE) --start-epoch $$start_epoch; result_status=$$?; \
@@ -301,6 +328,82 @@ gui_waves:
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -xmlibdirname $(RUN_XMLIB) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG) -gui -input $(RUN_DIR)/../$(SIMVISION_TCL)
+
+## --------------------------- Indago debug ----------------------------------
+
+## Indago is used in POST-PROCESS mode here: a simulation run creates the
+## Indago database (ida.db), which is opened afterwards with `indago -db`.
+## A plain `make run` / `make gui` does NOT produce an ida.db: the simulator
+## must be invoked with the Indago database option, which `indago_run` does.
+##
+## The simulator-side option is deliberately kept configurable and MUST be
+## verified against THIS installation, not assumed:
+##   make xrun_indago_check     # greps `xrun -help` for what it supports
+## INDAGO_DEBUG_OPTS below matches the documented post-process form
+## `-debug_opts +indago`; do not change it unless xrun -help shows otherwise.
+INDAGO ?= indago
+INDAGO_DEBUG_OPTS ?= +indago
+INDAGO_OPTS ?=
+
+## Open a post-process Indago database in the GUI.
+##   make indago DB=./mac_apb_config_cdc_test_c_19.09.2026-17.28.03/ida.db
+## NOTE: `indago -db <db>` runs in the background, exactly as the command
+## shown above; the GUI keeps running after make returns.
+indago:
+	@if [ -z "$(strip $(DB))" ]; then \
+	  echo "ERROR: no Indago database given (DB= is empty)."; \
+	  echo "  Usage : make indago DB=<path-to-ida.db>"; \
+	  echo "  List  : make find_db   # to see the databases that exist"; \
+	  exit 1; \
+	fi
+	@if [ ! -f "$(DB)" ]; then \
+	  echo "ERROR: Indago database '$(DB)' not found (or is not a file)."; \
+	  echo "  Create one first with: make indago_run TEST=<test>"; \
+	  echo "  Then list candidates with: make find_db"; \
+	  exit 1; \
+	fi
+	$(INDAGO) $(INDAGO_OPTS) -db $(DB) &
+
+## Alias for `indago`: open a specified Indago database (indago -db <db>).
+indago_db: indago
+
+## Show the installed Indago executable's help (supported Indago-side options).
+indago_help:
+	$(INDAGO) -help
+
+## Verify what THIS xrun installation supports for Indago (do not guess).
+xrun_indago_check:
+	@echo ">> xrun -help: Indago-related options:"
+	@$(XRUN) -help 2>&1 | grep -i indago || \
+	  echo "  (no 'indago' entries in xrun -help on this installation)"
+
+## List every Indago database (ida.db) below the current tree.
+find_db:
+	@echo ">> Indago databases (ida.db) found under $(ARTIFACT_ROOT):"
+	@found=0; \
+	for d in $$(find $(ARTIFACT_ROOT) -name 'ida.db' -type f 2>/dev/null); do \
+	  echo "  $$d"; \
+	  found=1; \
+	done; \
+	if [ $$found -eq 0 ]; then \
+	  echo "  (none found)"; \
+	  echo "  Create one with: make indago_run TEST=<test>"; \
+	fi
+
+## Simulation run that ALSO generates the Indago post-process database.
+## xrun creates ida.db in the current directory; it is then moved into the
+## run folder.  Afterwards open it with:
+##   make indago DB=./<TEST>_<ts>/ida.db
+indago_run:
+	@-$(MAKE) --no-print-directory run_existing \
+	  XRUN_EXTRA_OPTS="-debug_opts $(INDAGO_DEBUG_OPTS)"; \
+	rc=$$?; \
+	if [ -f ida.db ]; then \
+	  mkdir -p $(RUN_DIR); \
+	  mv -f ida.db $(RUN_DIR)/ida.db; \
+	  echo ">> Indago database written: $(RUN_DIR)/ida.db"; \
+	fi; \
+	exit $$rc
 
 ## --------------------------- Regression ------------------------------------
 
