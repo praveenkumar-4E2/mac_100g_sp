@@ -417,7 +417,7 @@ task mac_stats_read_test_c::run_read_repeated_timing();
     clear_all_status();
 
     repeat (5) drive_rx_event(mac_stats_cause_irq_seq_c::STIM_RX_INVALID);
-    #read_delays[i];
+    #(read_delays[i]);
 
     read_status_snapshot(reg_map_pkg::REG_RX_INVALID_COUNT, cnt_data);
     if (i <= 1) begin
@@ -588,7 +588,7 @@ task mac_stats_read_test_c::run_read_random_campaign();
 
     if (!std::randomize(read_delay_idx) with { read_delay_idx inside {[0 : 3]}; })
       `uvm_fatal("STATS_READ", "Read delay randomization failed")
-    #read_delays[read_delay_idx];
+    #(read_delays[read_delay_idx]);
 
     if (!std::randomize(do_clear_invalid) with { do_clear_invalid dist { 1 := 20, 0 := 80 }; })
       `uvm_fatal("STATS_READ", "Clear invalid randomization failed")

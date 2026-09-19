@@ -405,7 +405,7 @@ task mac_stats_cause_irq_test_c::run_vary_read_timing();
     #200ns;
 
     drive_event(mac_stats_cause_irq_seq_c::STIM_RX_INVALID);
-    #read_delays[i];
+    #(read_delays[i]);
 
     apb_read_data(reg_map_pkg::REG_INTERRUPT_STATUS, data);
     if (i == 0)

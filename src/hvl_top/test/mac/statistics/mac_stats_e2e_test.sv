@@ -480,7 +480,7 @@ task mac_stats_e2e_test_c::run_e2e_vary_read_timing();
     clear_all_status();
 
     drive_rx_event(mac_stats_cause_irq_seq_c::STIM_RX_INVALID);
-    #read_delays[i];
+    #(read_delays[i]);
 
     read_status_snapshot(reg_map_pkg::REG_RX_INVALID_COUNT, cnt_data);
     check_masked($sformatf("invalid read at %0t", read_delays[i]),

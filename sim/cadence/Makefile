@@ -53,7 +53,7 @@ DEFINES ?=
 # -nowarn NONPRT,NODNTW,TMSERX : drop benign noise (UTF-8 em-dashes in
 #   comments, implicit-net ports under default_nettype none, nested timescales).
 # -elaborate : stops after elaboration (compile-checks only, no simulation).
-XRUN_BASE_OPTS = -uvm -f $(FILELIST) -top $(TOP) -access +rwc -timescale 1ns/1ps -nowarn NONPRT,NODNTW,TMSERX
+XRUN_BASE_OPTS = -uvm -f $(FILELIST) -top $(TOP) -access +rwc -timescale 1ns/1ps -nowarn NONPRT -nowarn NODNTW -nowarn TMSERX
 DEFINE_OPTS = $(foreach define,$(DEFINES),+define+$(define))
 COV_RUN_OPTS = -coverage all -covtest $(COVTEST) -covoverwrite
 COMPILE_LOG = $(LOG_DIR)/compile/mac_xrun_compile.log
