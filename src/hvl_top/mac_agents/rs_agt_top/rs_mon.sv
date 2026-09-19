@@ -158,7 +158,7 @@ task rs_monitor_c::capture_beat();
   // mon_cb input skew #1step samples the pre-edge value — the exact
   // view the DUT's always_ff capture uses — so the monitor sees the
   // same handshakes (and the same idle cycles) as the RTL.
-  @(posedge vif.mon_cb);
+  @(vif.mon_cb);
 
   beat_valid  = 0;
   frame_start = 0;

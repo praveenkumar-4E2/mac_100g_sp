@@ -83,7 +83,7 @@ task axi_monitor_c::run_phase(uvm_phase phase);
   forever begin
     // mon_cb input skew #1step samples the pre-edge value — the exact
     // view the DUT's always_ff capture uses.
-    @(posedge vif.mon_cb);
+    @(vif.mon_cb);
     if (vif.rst) begin
       frame_q.delete();
       continue;

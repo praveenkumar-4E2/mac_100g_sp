@@ -84,7 +84,7 @@ endfunction
 task apb_monitor_c::run_phase(uvm_phase phase);
   reset_state();
   forever begin
-    @(posedge cfg_h.m_vif.mon_cb);
+    @(cfg_h.m_vif.mon_cb);
     m_cycle++;
     if (cfg_h.m_vif.mon_cb.rst) begin
       if (m_state != MON_IDLE) begin
