@@ -6,11 +6,15 @@
 ##
 ## Run from: sim/cadence/
 ##   - filelist paths are resolved via mac_compile.f (../../src relative)
-##   - logs go under logs/, results under results/, coverage under coverage/
-##     (all inside this cadence folder, per request)
+##   - NOTHING is written loose into sim/cadence/; artifacts are organized:
+##       logs/*/       - simulator run logs, compile logs
+##       transactions/*/ - UVM transaction traces (+MAC_TXN_LOG)
+##       waves/*/      - waveform databases (waves.shm) and Indago dbs (ida.db)
+##       runs/<test>_<ts>/ - per-run sandboxes (private XMLib, cov_work)
+##       results/, coverage/ - JSON summaries and merged coverage reports
 ##   - compiled snapshot cache is managed by xrun: check/compile share
 ##     ./xcelium.d; every run (run/run_cov/gui) uses a private XMLib run
-##     context (locks/snapshots) inside its own run_*/ folder so parallel
+##     context (locks/snapshots) inside its own runs/*/ folder so parallel
 ##     runs never lock-fight
 ##
 ## Requires Cadence Xcelium on PATH (xrun, imc) and Python 3.
@@ -46,6 +50,8 @@ SOURCE_DIR ?= ../../src
 LOG_DIR ?= logs
 RESULT_DIR ?= results
 COVERAGE_DIR ?= coverage
+TXN_DIR ?= transactions
+WAVES_DIR ?= waves
 PLUSARGS ?=
 DEFINES ?=
 
@@ -97,18 +103,21 @@ UVM_TIMEOUT ?=
 comma := ,
 UVM_TIMEOUT_PLUSARG = $(if $(strip $(UVM_TIMEOUT)),+UVM_TIMEOUT=$(UVM_TIMEOUT)$(comma)YES)
 
-## Every test run gets a timestamped test-named folder inside cadence/.
-## Logs, waveforms, and coverage databases for one run stay together there.
+## Every test run gets a timestamped test-named RUN_ID.  The run sandbox
+## (private XMLib context, cov_work) lives in runs/<TEST>_<ts>/ so nothing is
+## dropped loose into sim/cadence/; user-facing artifacts are categorized:
+## run log -> logs/, transaction trace -> transactions/, waves & Indago -> waves/.
 ifndef RUN_TIMESTAMP
 RUN_TIMESTAMP := $(shell $(PYTHON) -c "from datetime import datetime; print(datetime.now().strftime('%d.%m.%Y-%H.%M.%S'))")
 endif
 RUN_ID ?= $(TEST)_$(RUN_TIMESTAMP)
-ARTIFACT_ROOT ?= .
+ARTIFACT_ROOT ?= runs
 RUN_DIR    ?= $(ARTIFACT_ROOT)/$(RUN_ID)
-RUN_LOG    = $(RUN_DIR)/$(RUN_ID).log
+RUN_LOG    = $(LOG_DIR)/$(RUN_ID)/$(RUN_ID).log
 RUN_TCL    = $(RUN_DIR)/run.tcl
-# Transaction trace records are appended to the normal UVM test log.
-TXN_LOG    = $(RUN_LOG)
+TXN_LOG    = $(TXN_DIR)/$(RUN_ID)/transactions.log
+WAVE_DIR   = $(WAVES_DIR)/$(RUN_ID)
+WAVE_DB    = $(WAVE_DIR)/waves.shm
 # Each run gets its OWN xrun run context (-xmlibdirname), living inside its
 # run folder.  XMLib is where xrun keeps the per-invocation databases: the
 # run.* dirs, .xmlib.lock, and snapshots.  A private XMLib is what makes
@@ -157,11 +166,13 @@ REGRESSION_XMLIB ?= $(abspath $(RESULT_DIR)/regression/$(REGRESSION_ID)/xmlib)
 
 ## Files/dirs removed by `make clean`
 CLEAN_TARGETS = $(WORK) csrc waves.shm cov_work $(LOG_DIR) $(RESULT_DIR) \
-                $(COVERAGE_DIR) *.log *.key *_??.??.????-??.??.??
+                $(COVERAGE_DIR) $(ARTIFACT_ROOT) $(TXN_DIR) $(WAVES_DIR) \
+                __pycache__ *.log *.key
 
 .PHONY: help all check compile run smoke run_cov cov_report coverage \
         coverage_merge gui gui_waves audit regression clean \
-        indago indago_db indago_help xrun_indago_check find_db indago_run
+        indago indago_db indago_help xrun_indago_check find_db indago_run \
+        open_log open_txns open_waves
 
 ## --------------------------- Default / Help ------------------------------
 
@@ -183,8 +194,14 @@ help:
 	@echo "";
 	@echo "I want to run a SPECIFIC test:";
 	@echo "  make run TEST=mac_tx_payload_50_test_c SEED=12345 PLUSARGS=\"+NUM_FRAMES=10\"";
-	@echo "  (run artifacts are saved under ./<test>_<DDMMYYYY-HHMMSS>/;";
-	@echo "   logs in logs/, results in results/, all inside sim/cadence/)";
+	@echo "  (sandbox under runs/<test>_<DDMMYYYY-HHMMSS>/; log in logs/,"
+	@echo "   transactions in transactions/, results in results/ - nothing loose"
+	@echo "   in sim/cadence/)";
+	@echo "";
+	@echo "I want to look at the last run's artifacts:";
+	@echo "  make open_log     # tail the newest run log";
+	@echo "  make open_txns    # show the newest transaction trace";
+	@echo "  make open_waves   # open the newest waveform in SimVision";
 	@echo "";
 	@echo "I want to run a test with coverage collection:";
 	@echo "  make run_cov TEST=mac_sanity_test_c";
@@ -197,7 +214,7 @@ help:
 	@echo "  make xrun_indago_check              # what this xrun supports for Indago";
 	@echo "  make indago_run TEST=mac_apb_config_cdc_test_c   # sim -> creates ida.db";
 	@echo "  make find_db                        # list the ida.db databases found";
-	@echo "  make indago DB=./mac_apb_config_cdc_test_c_<ts>/ida.db   # open it";
+	@echo "  make indago DB=waves/mac_apb_config_cdc_test_c_<ts>/ida.db   # open it";
 	@echo "  make indago_help                    # options supported by this indago";
 	@echo "";
 	@echo "I want to run a whole list of tests (regression):";
@@ -227,6 +244,9 @@ help:
 	@echo "  indago_help    - help for the installed indago executable";
 	@echo "  find_db        - list ida.db databases under the current tree";
 	@echo "  xrun_indago_check - grep xrun -help for supported Indago options";
+	@echo "  open_log       - tail the newest run log (logs/)";
+	@echo "  open_txns      - show the newest transaction trace (transactions/)";
+	@echo "  open_waves     - open the newest waveform (waves/) in SimVision";
 	@echo "  regression     - run every test listed in TESTLIST";
 	@echo "  clean          - remove all generated files";
 	@echo "";
@@ -234,7 +254,7 @@ help:
 	@echo "  SIMULATOR=$(SIMULATOR)  TEST=$(TEST)  VERBOSITY=$(VERBOSITY)  SEED=$(SEED)";
 	@echo "  PLUSARGS=$(PLUSARGS)  DEFINES=$(DEFINES)  SOURCE_DIR=$(SOURCE_DIR)";
 	@echo "  LOG_DIR=$(LOG_DIR)  RESULT_DIR=$(RESULT_DIR)  COVERAGE_DIR=$(COVERAGE_DIR)";
-	@echo "  ARTIFACT_ROOT=$(ARTIFACT_ROOT)  RUN_TIMESTAMP=$(RUN_TIMESTAMP)";
+	@echo "  TXN_DIR=$(TXN_DIR)  WAVES_DIR=$(WAVES_DIR)  ARTIFACT_ROOT=$(ARTIFACT_ROOT)";
 	@echo "  RUN_XMLIB=$(RUN_XMLIB)  # private xrun run-context per run (parallel-safe)";
 	@echo "  UVM_HOME=$(UVM_HOME)  # pinned UVM install (-uvmhome)";
 	@echo "  DB=            # Indago database to open with 'make indago DB=<path>'";
@@ -264,13 +284,15 @@ run:
 
 ## Prepare the run folder, run the test, and capture a JSON result.
 run_existing:
-	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
+	mkdir -p $(RUN_DIR) $(RUN_XMLIB) $(dir $(RUN_LOG)) $(dir $(TXN_LOG))
 	@start_epoch=$$(date +%s); \
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) $(XRUN_EXTRA_OPTS) -xmlibdirname $(RUN_XMLIB) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG); sim_status=$$?; \
 	$(PYTHON) mac_result_summary.py capture --test $(TEST) --seed $(SEED) --log $(RUN_LOG) --result $(RESULT_FILE) --start-epoch $$start_epoch; result_status=$$?; \
 	echo ">> Test '$(TEST)' result: $(RESULT_FILE)"; \
+	echo ">> Log: $(RUN_LOG)"; \
+	echo ">> Transactions: $(TXN_LOG)"; \
 	if [ $$sim_status -ne 0 ]; then exit $$sim_status; else exit $$result_status; fi
 
 smoke:
@@ -282,7 +304,7 @@ smoke:
 ## Xcelium writes cov_work into the per-test run folder; afterwards make
 ## cov_report turns it into HTML (imc).
 run_cov:
-	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
+	mkdir -p $(RUN_DIR) $(RUN_XMLIB) $(dir $(RUN_LOG)) $(dir $(TXN_LOG))
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) $(COV_RUN_OPTS) -xmlibdirname $(RUN_XMLIB) -covworkdir $(COV_WORKDIR) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) +MAC_FUNCTIONAL_COVERAGE $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG)
@@ -316,18 +338,21 @@ coverage_merge:
 
 ## Interactive SimVision, no automatic waveform layout.
 gui:
-	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
+	mkdir -p $(RUN_DIR) $(RUN_XMLIB) $(dir $(RUN_LOG)) $(dir $(TXN_LOG))
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -xmlibdirname $(RUN_XMLIB) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG) -gui
 
-## Interactive SimVision with the curated probe layout (simvision.tcl)
-## and an SHM waveform database saved in the run folder.
+## Interactive SimVision with the curated probe layout (simvision.tcl).
+## The SHM waveform database is created as waves.shm in the working directory
+## and is moved into waves/<RUN_ID>/ when the run closes (nothing stays in
+## sim/cadence/).  Open it later with `make open_waves`.
 gui_waves:
-	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
+	mkdir -p $(RUN_DIR) $(RUN_XMLIB) $(dir $(RUN_LOG)) $(dir $(TXN_LOG)) $(WAVE_DIR)
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -xmlibdirname $(RUN_XMLIB) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
-	  -l $(RUN_LOG) -gui -input $(RUN_DIR)/../$(SIMVISION_TCL)
+	  -l $(RUN_LOG) -gui -input $(abspath $(SIMVISION_TCL))
+	@if [ -d waves.shm ]; then mv -f waves.shm $(WAVE_DIR)/waves.shm; echo ">> Waveform: $(WAVE_DIR)/waves.shm"; fi
 
 ## --------------------------- Indago debug ----------------------------------
 
@@ -349,7 +374,7 @@ INDAGO_DEBUG_OPTS ?= indago_pp
 INDAGO_OPTS ?=
 
 ## Open a post-process Indago database in the GUI.
-##   make indago DB=./mac_apb_config_cdc_test_c_19.09.2026-17.28.03/ida.db
+##   make indago DB=waves/mac_apb_config_cdc_test_c_19.09.2026-17.28.03/ida.db
 ## NOTE: `indago -db <db>` runs in the background, exactly as the command
 ## shown above; the GUI keeps running after make returns.
 indago:
@@ -384,11 +409,12 @@ xrun_indago_check:
 	@echo ">> xrun -helpall: any lines mentioning indago:"
 	@$(XRUN) -helpall 2>&1 | grep -i -B 2 -A 8 indago || echo "  (no 'indago' lines in xrun -helpall)";
 
-## List every Indago database (ida.db) below the current tree.
+## List every Indago database (ida.db) under the artifact folders.
 find_db:
-	@echo ">> Indago databases (ida.db) found under $(ARTIFACT_ROOT):"
+	@echo ">> Indago databases (ida.db) found:"
 	@found=0; \
-	for d in $$(find $(ARTIFACT_ROOT) -name 'ida.db' -type f 2>/dev/null); do \
+	for d in $$(find $(ARTIFACT_ROOT) $(WAVES_DIR) $(LOG_DIR) $(TXN_DIR) \
+	               -name 'ida.db' -type f 2>/dev/null); do \
 	  echo "  $$d"; \
 	  found=1; \
 	done; \
@@ -398,19 +424,52 @@ find_db:
 	fi
 
 ## Simulation run that ALSO generates the Indago post-process database.
-## xrun creates ida.db in the current directory; it is then moved into the
-## run folder.  Afterwards open it with:
-##   make indago DB=./<TEST>_<ts>/ida.db
+## xrun creates ida.db in the current working directory; it is then moved
+## into waves/<RUN_ID>/.  Afterwards open it with:
+##   make indago DB=waves/<TEST>_<ts>/ida.db
 indago_run:
 	@-$(MAKE) --no-print-directory run_existing \
 	  XRUN_EXTRA_OPTS="-debug_opts $(INDAGO_DEBUG_OPTS)"; \
 	rc=$$?; \
 	if [ -f ida.db ]; then \
-	  mkdir -p $(RUN_DIR); \
-	  mv -f ida.db $(RUN_DIR)/ida.db; \
-	  echo ">> Indago database written: $(RUN_DIR)/ida.db"; \
+	  mkdir -p $(WAVE_DIR); \
+	  mv -f ida.db $(WAVE_DIR)/ida.db; \
+	  echo ">> Indago database written: $(WAVE_DIR)/ida.db"; \
 	fi; \
 	exit $$rc
+
+## --------------------------- Open artifacts (debug helpers) ----------------
+
+## Newest-artifact pickers (by modification time).  Everything lives in the
+## categorized folders, so these are safe to call at any time.  The log picker
+## ignores compile/regression logs so it always lands on a run log.
+LATEST_LOG  = $(shell ls -1dt $(LOG_DIR)/*/*.log 2>/dev/null | grep -v '/compile/' | grep -v '/regression/' | head -n1)
+LATEST_TXN  = $(shell ls -1dt $(TXN_DIR)/*/*.log        2>/dev/null | head -n1)
+LATEST_WAVE = $(shell ls -1dt $(WAVES_DIR)/*/waves.shm   2>/dev/null | head -n1)
+
+## Tail the newest run log (logs/<RUN_ID>/<RUN_ID>.log).
+open_log:
+	@if [ -z "$(LATEST_LOG)" ]; then \
+	  echo "ERROR: no run log found under $(LOG_DIR)/ (ran 'make run'?)."; exit 1; \
+	fi; \
+	echo ">> $(LATEST_LOG)"; \
+	tail -n 200 "$(LATEST_LOG)"
+
+## Show the newest UVM transaction trace (transactions/<RUN_ID>/transactions.log).
+open_txns:
+	@if [ -z "$(LATEST_TXN)" ]; then \
+	  echo "ERROR: no transaction trace found under $(TXN_DIR)/ (ran 'make run'?)."; exit 1; \
+	fi; \
+	echo ">> $(LATEST_TXN)"; \
+	tail -n 100 "$(LATEST_TXN)"
+
+## Open the newest saved waveform (waves/<RUN_ID>/waves.shm) in SimVision.
+open_waves:
+	@if [ -z "$(LATEST_WAVE)" ]; then \
+	  echo "ERROR: no waveform found under $(WAVES_DIR)/ (ran 'make gui_waves'?)."; exit 1; \
+	fi; \
+	echo ">> Opening $(LATEST_WAVE) in SimVision"; \
+	simvision "$(LATEST_WAVE)" &
 
 ## --------------------------- Regression ------------------------------------
 
