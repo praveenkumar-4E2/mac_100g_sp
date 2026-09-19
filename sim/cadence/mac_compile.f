@@ -1,9 +1,7 @@
 // Canonical UVM build for Cadence Xcelium (xrun): pure-Verilog RTL
 // connected to the existing HVL.  Paths are relative to sim/cadence/
 // (../../src resolves to the repository root), matching Questa's list.
-+incdir+/home/install/XCELIUM2209/tools.lnx86/methodology/UVM/CDNS-1.2/sv/src
 +incdir+../../src/rtl_verilog
-+incdir+../../src/hdl_top
 +incdir+../../src/hvl_top/interfaces
 +incdir+../../src/hvl_top/tb
 +incdir+../../src/hvl_top/test
@@ -20,6 +18,11 @@
 +incdir+../../src/hvl_top/test/mac/counters
 +incdir+../../src/hvl_top/test/mac/tx_pad
 +incdir+../../src/hvl_top/test/mac/statistics
++incdir+../../src/hvl_top/test/mac/crc
++incdir+../../src/hvl_top/test/mac/cdc
++incdir+../../src/hvl_top/test/mac/tx_adapter
++incdir+../../src/hvl_top/test/mac/address_filtering
++incdir+../../src/hvl_top/test/mac/ipg
 +incdir+../../src/hvl_top/sequences/axi
 +incdir+../../src/hvl_top/sequences/rs
 +incdir+../../src/hvl_top/sequences/smoke
