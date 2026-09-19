@@ -1,0 +1,4 @@
+# Comprehensive MAC VIP scenario coverage.
+# Covers: basic access, boundaries, CDC clock variation, negative testing,
+# constrained-random sustained, burst/sparse, boundary+delayed ack, clock ratio.
+mac_comprehensive_scenario_test_c

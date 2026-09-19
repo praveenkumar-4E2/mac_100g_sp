@@ -1,0 +1,6 @@
+# PAUSE control-frame scenarios.
+PF_001_pause_test_c
+PF_002_pause_tx_test_c
+PF_003_pause_timer_test_c
+PF_004_pause_std_002_test_c
+PF_005_pause_admit_003_test_c

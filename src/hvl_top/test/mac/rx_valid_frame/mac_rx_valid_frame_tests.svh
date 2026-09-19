@@ -1,0 +1,6 @@
+`ifndef MAC_RX_VALID_FRAME_TESTS_SVH
+`define MAC_RX_VALID_FRAME_TESTS_SVH
+
+`include "RX_VALID_FRAME_001.sv"
+
+`endif

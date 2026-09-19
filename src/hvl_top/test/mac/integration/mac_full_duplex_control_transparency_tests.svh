@@ -1,0 +1,6 @@
+`ifndef MAC_FULL_DUPLEX_CONTROL_TRANSPARENCY_TESTS_SVH
+`define MAC_FULL_DUPLEX_CONTROL_TRANSPARENCY_TESTS_SVH
+
+`include "mac_full_duplex_control_transparency_test.sv"
+
+`endif

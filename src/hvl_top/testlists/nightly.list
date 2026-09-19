@@ -1,0 +1,5 @@
+# Current nightly suite. Add stress and coverage-closure tests here.
+mac_sanity_test_c
+mac_register_access_test_c
+PF_001_pause_test_c
+PF_002_pause_tx_test_c

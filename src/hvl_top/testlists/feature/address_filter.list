@@ -1,0 +1,4 @@
+# Address filtering feature regression.
+mac_addr_filter_boundary_pattern_test_c
+mac_addr_filter_boundary_addr_pattern_test_c
+mac_addr_filter_boundary_sa_test_c

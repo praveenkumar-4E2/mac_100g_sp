@@ -1,0 +1,63 @@
+# Full MAC regression. Keep this list deterministic and review additions.
+# Feature ownership and the 61-case plan: ../testplan/mac_testplan.csv
+mac_sanity_test_c
+mac_register_access_test_c
+mac_jumbo_frame_test_c
+mac_super_jumbo_frame_test_c
+
+mac_tx_crc_001_test_c
+mac_rx_crc_002_test_c
+
+
+mac_apb_config_cdc_test_c
+mac_apb_layer_management_test_c
+mac_apb_limits_groups_test_c
+mac_apb_cdc_transition_test_c
+mac_apb_capability_test_c
+
+mac_interrupt_test_c
+
+mac_preamble_gen_001_test_c
+mac_rx_preamble_sfd_001_test_c
+rx_valid_frame_001_test_c
+
+mac_ethertype_all_test_c
+mac_control_test_c
+mac_ctrl_all_test_c
+mac_addr_filter_boundary_addr_pattern_test_c
+mac_addr_filter_boundary_sa_test_c
+mac_tx_pad_001_test_c
+
+mac_comprehensive_scenario_test_c
+mac_cdc_handshake_transfer_test_c
+mac_cdc_pulse_atomicity_test_c
+
+mac_apb_functional_config_test_c
+mac_top_concurrent_integration_test_c
+mac_full_duplex_control_transparency_test_c
+tx_adapter_001_test_c
+rx_valid_frame_002_test_c
+rx_pipe_001_test_c
+
+
+mac_stats_cause_irq_test_c
+mac_stats_cnt_err_test_c
+mac_stats_e2e_test_c
+mac_stats_read_test_c
+mac_tx_pad_001_test_c
+
+# counters
+COUN_001_stat_snap_test_c
+COUN_002_stat_counter_test_c
+
+# ipg
+IPG_001_ipg_tx_test_c
+IPG_002_ipg_tx_arb_test_c
+
+# pause frame
+PF_001_pause_test_c
+PF_002_pause_tx_test_c
+PF_003_pause_timer_test_c
+PF_004_pause_std_002_test_c
+PF_005_pause_admit_003_test_c
+

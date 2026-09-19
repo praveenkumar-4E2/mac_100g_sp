@@ -1,0 +1,3 @@
+# TX Inter-Frame Gap test scenarios.
+IPG_001_ipg_tx_test_c
+IPG_002_ipg_tx_arb_test_c

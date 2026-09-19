@@ -1,0 +1,69 @@
+# Simulation
+*.log
+*.jou
+*.wlf
+*.vcd
+*.fsdb
+*.vpd
+*.key
+*.ini
+*.vstf
+*.db
+*.dbg
+
+# Compile
+work/
+csrc/
+simv*
+DVEfiles/
+
+# Temporary
+*.swp
+*.tmp
+
+# Coverage
+cov/
+urgReport/
+/logs/
+/results/
+/coverage/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# GVim/Vim temporary files
+*.swp
+*.swo
+*.swn
+*~
+
+# Vim session files
+Session.vim
+
+# Vim undo files
+*.un~
+
+# Vim backup files
+*.bak
+
+# Vim directory
+.vim/
+.vimrc.local
+
+
+# QuestaSim transient
+transcript
+wlftzr*
+tcl_stacktrace.txt
+.visualizer/
+sim/Questasim/*_????????-??????/
+
+# Python
+__pycache__/
+
+sim/Questasim/vsim_auto_*.do

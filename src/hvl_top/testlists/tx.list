@@ -1,0 +1,4 @@
+# TX coverage is currently exercised by the bidirectional sanity test.
+mac_sanity_test_c
+mac_preamble_gen_001_test_c
+mac_tx_pad_001_test_c

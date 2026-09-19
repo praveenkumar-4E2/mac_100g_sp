@@ -1,0 +1,9 @@
+# CDC handshake MAC service transfer synchronization.
+# Verifies reliable single-transaction payload transfer through cdc_handshake:
+# basic accepted request, backpressure/delayed ack, sequence patterns,
+# and stress at maximum supported rate.
+mac_cdc_handshake_transfer_test_c
+
+# CDC pulse atomicity: verify max-frame-size config update crosses APB/MAC
+# clock domains atomically without mixed or stale values.
+mac_cdc_pulse_atomicity_test_c

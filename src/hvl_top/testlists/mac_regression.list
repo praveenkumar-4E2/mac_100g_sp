@@ -1,0 +1,22 @@
+# MAC regression: randomized bidirectional sanity followed by directed tests.
+# Each test is MAC-local and self-terminates.
+mac_sanity_test_c
+mac_register_access_test_c
+mac_tx_crc_001_test_c
+mac_rx_crc_002_test_c
+mac_interrupt_test_c
+
+# counters
+COUN_001_stat_snap_test_c
+COUN_002_stat_counter_test_c
+
+# ipg
+IPG_001_ipg_tx_test_c
+IPG_002_ipg_tx_arb_test_c
+
+# pause frame
+PF_001_pause_test_c
+PF_002_pause_tx_test_c
+PF_003_pause_timer_test_c
+PF_004_pause_std_002_test_c
+PF_005_pause_admit_003_test_c

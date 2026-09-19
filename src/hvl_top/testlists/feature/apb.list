@@ -1,0 +1,9 @@
+# APB scenarios (MAC-APB-001..006).
+mac_register_access_test_c
+mac_apb_config_cdc_test_c
+mac_apb_layer_management_test_c
+mac_apb_limits_groups_test_c
+mac_apb_cdc_transition_test_c
+mac_apb_capability_test_c
+# Kept out of the passing feature regression until RTL event inputs are wired.
+ mac_interrupt_test_c

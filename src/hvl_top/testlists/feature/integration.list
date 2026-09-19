@@ -1,0 +1,10 @@
+# Integration scenarios (MAC-INT-001..006).
+mac_sanity_test_c
+
+mac_apb_functional_config_test_c
+mac_top_concurrent_integration_test_c
+mac_full_duplex_control_transparency_test_c
+tx_adapter_001_test_c
+rx_valid_frame_002_test_c
+rx_pipe_001_test_c
+
