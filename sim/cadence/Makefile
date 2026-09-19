@@ -8,7 +8,9 @@
 ##   - filelist paths are resolved via mac_compile.f (../../src relative)
 ##   - logs go under logs/, results under results/, coverage under coverage/
 ##     (all inside this cadence folder, per request)
-##   - compiled snapshot cache is managed by xrun in ./xcelium.d
+##   - compiled snapshot cache is managed by xrun: check/compile share
+##     ./xcelium.d; every run (run/run_cov/gui) uses a private work library
+##     inside its own run_*/ folder so parallel runs never lock-fight
 ##
 ## Requires Cadence Xcelium on PATH (xrun, imc) and Python 3.
 ## =====================================================================
@@ -95,6 +97,10 @@ RUN_LOG    = $(RUN_DIR)/$(RUN_ID).log
 RUN_TCL    = $(RUN_DIR)/run.tcl
 # Transaction trace records are appended to the normal UVM test log.
 TXN_LOG    = $(RUN_LOG)
+# Each run uses its OWN xrun work library, living inside its run folder.
+# This makes concurrent invocations (e.g. a GUI and a batch run) fully
+# independent — no contention for the shared xcelium.d used by check/compile.
+RUN_WORK ?= $(RUN_DIR)/$(WORK)
 RESULT_FILE ?= $(RESULT_DIR)/tests/$(RUN_ID).json
 
 ## --------------------------- Coverage config -----------------------------
@@ -124,6 +130,10 @@ REGRESSION_RESULTS_DIR ?= $(RESULT_DIR)/regression/$(REGRESSION_ID)/tests
 # time ticks (5 ms at the project time precision); override or disable with
 # `make regression REGRESSION_UVM_TIMEOUT=` when running intentional long tests.
 REGRESSION_UVM_TIMEOUT ?= 5000000000
+# Regression runs sequentially, so all tests in one regression share a single
+# work library for fast incremental reuse.  It is kept inside the regression
+# artifacts so it can never collide with an unrelated concurrent run.
+REGRESSION_WORK ?= $(RESULT_DIR)/regression/$(REGRESSION_ID)/xcelium.d
 
 ## Files/dirs removed by `make clean`
 CLEAN_TARGETS = $(WORK) csrc waves.shm cov_work $(LOG_DIR) $(RESULT_DIR) \
@@ -191,6 +201,7 @@ help:
 	@echo "  PLUSARGS=$(PLUSARGS)  DEFINES=$(DEFINES)  SOURCE_DIR=$(SOURCE_DIR)";
 	@echo "  LOG_DIR=$(LOG_DIR)  RESULT_DIR=$(RESULT_DIR)  COVERAGE_DIR=$(COVERAGE_DIR)";
 	@echo "  ARTIFACT_ROOT=$(ARTIFACT_ROOT)  RUN_TIMESTAMP=$(RUN_TIMESTAMP)";
+	@echo "  RUN_WORK=$(RUN_WORK)  # private xrun work lib per run (parallel-safe)";
 	@echo "======================================================================";
 	@echo "";
 
@@ -211,15 +222,15 @@ compile:
 	@echo ">> Elaboration finished. Log: $(COMPILE_LOG)";
 
 ## Batch-mode simulation (no GUI).  xrun compiles, elaborates, and runs in a
-## single invocation; unchanged units are reused from xcelium.d.
-run: compile
+## single invocation into the run's private work library (see RUN_WORK).
+run:
 	$(MAKE) --no-print-directory run_existing
 
 ## Prepare the run folder, run the test, and capture a JSON result.
 run_existing:
 	mkdir -p $(RUN_DIR)
 	@start_epoch=$$(date +%s); \
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) \
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG); sim_status=$$?; \
 	$(PYTHON) mac_result_summary.py capture --test $(TEST) --seed $(SEED) --log $(RUN_LOG) --result $(RESULT_FILE) --start-epoch $$start_epoch; result_status=$$?; \
@@ -234,9 +245,9 @@ smoke:
 ## Batch-mode simulation with coverage collection.
 ## Xcelium writes cov_work into the per-test run folder; afterwards make
 ## cov_report turns it into HTML (imc).
-run_cov: compile
+run_cov:
 	mkdir -p $(RUN_DIR)
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) $(COV_RUN_OPTS) -covworkdir $(COV_WORKDIR) \
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) $(COV_RUN_OPTS) -work $(RUN_WORK) -covworkdir $(COV_WORKDIR) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) +MAC_FUNCTIONAL_COVERAGE $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG)
 	$(PYTHON) mac_result_summary.py capture --test $(TEST) --seed $(SEED) --log $(RUN_LOG) --result $(RESULT_FILE)
@@ -270,7 +281,7 @@ coverage_merge:
 ## Interactive SimVision, no automatic waveform layout.
 gui:
 	mkdir -p $(RUN_DIR)
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) \
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG) -gui
 
@@ -278,26 +289,26 @@ gui:
 ## and an SHM waveform database saved in the run folder.
 gui_waves:
 	mkdir -p $(RUN_DIR)
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) \
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG) -gui -input $(RUN_DIR)/../$(SIMVISION_TCL)
 
 ## --------------------------- Regression ------------------------------------
 
 ## Run every test listed in $(TESTLIST) (one test name per line,
-## '#' comments and blank lines ignored). Compiles once conceptually;
-## xrun re-elaborates incrementally per test via run_existing.
-regression: compile
+## '#' comments and blank lines ignored). Tests run sequentially and share
+## one work library (REGRESSION_WORK) for incremental reuse across the list.
+regression:
 	@if [ ! -f $(TESTLIST) ]; then \
 	  echo "ERROR: testlist file '$(TESTLIST)' not found."; exit 1; \
 	fi
 	@echo ">> Running regression from $(TESTLIST)";
-	@mkdir -p $(LOG_DIR)/regression $(REGRESSION_RESULTS_DIR); \
+	@mkdir -p $(LOG_DIR)/regression $(REGRESSION_RESULTS_DIR) $(REGRESSION_WORK); \
 	fail=0; \
 	for t in $$(awk '{ sub(/\r$$/, ""); if ($$0 !~ /^[[:space:]]*($$|#)/) print }' $(TESTLIST)); do \
 	  echo ""; \
 	  echo ">> ---- Running test: $$t ----"; \
-	  if $(MAKE) --no-print-directory run_existing TEST=$$t SEED=$(SEED) UVM_TIMEOUT=$(REGRESSION_UVM_TIMEOUT) RUN_ID=$${t}_$(RUN_TIMESTAMP) RESULT_FILE=$(REGRESSION_RESULTS_DIR)/$${t}.json; then \
+	  if $(MAKE) --no-print-directory run_existing TEST=$$t SEED=$(SEED) UVM_TIMEOUT=$(REGRESSION_UVM_TIMEOUT) RUN_ID=$${t}_$(RUN_TIMESTAMP) RUN_WORK=$(REGRESSION_WORK) RESULT_FILE=$(REGRESSION_RESULTS_DIR)/$${t}.json; then \
 	    echo ">> PASS: $$t"; \
 	  else \
 	    fail=1; \
