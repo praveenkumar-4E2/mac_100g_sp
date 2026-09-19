@@ -100,7 +100,10 @@ TXN_LOG    = $(RUN_LOG)
 # Each run uses its OWN xrun work library, living inside its run folder.
 # This makes concurrent invocations (e.g. a GUI and a batch run) fully
 # independent — no contention for the shared xcelium.d used by check/compile.
-RUN_WORK ?= $(RUN_DIR)/$(WORK)
+# The path must be ABSOLUTE: xrun re-resolves a relative -work relative to its
+# internal run directory (xcelium.d/run.*/*) and the UVM-component sub-compile
+# then fails with PRENOP.
+RUN_WORK ?= $(abspath $(RUN_DIR)/$(WORK))
 RESULT_FILE ?= $(RESULT_DIR)/tests/$(RUN_ID).json
 
 ## --------------------------- Coverage config -----------------------------
@@ -133,7 +136,8 @@ REGRESSION_UVM_TIMEOUT ?= 5000000000
 # Regression runs sequentially, so all tests in one regression share a single
 # work library for fast incremental reuse.  It is kept inside the regression
 # artifacts so it can never collide with an unrelated concurrent run.
-REGRESSION_WORK ?= $(RESULT_DIR)/regression/$(REGRESSION_ID)/xcelium.d
+# Absolute for the same reason as RUN_WORK (relative -work breaks in xrun).
+REGRESSION_WORK ?= $(abspath $(RESULT_DIR)/regression/$(REGRESSION_ID)/xcelium.d)
 
 ## Files/dirs removed by `make clean`
 CLEAN_TARGETS = $(WORK) csrc waves.shm cov_work $(LOG_DIR) $(RESULT_DIR) \
