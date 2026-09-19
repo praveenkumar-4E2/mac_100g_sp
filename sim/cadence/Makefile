@@ -232,7 +232,7 @@ run:
 
 ## Prepare the run folder, run the test, and capture a JSON result.
 run_existing:
-	mkdir -p $(RUN_DIR)
+	mkdir -p $(RUN_DIR) $(RUN_WORK)
 	@start_epoch=$$(date +%s); \
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
@@ -250,7 +250,7 @@ smoke:
 ## Xcelium writes cov_work into the per-test run folder; afterwards make
 ## cov_report turns it into HTML (imc).
 run_cov:
-	mkdir -p $(RUN_DIR)
+	mkdir -p $(RUN_DIR) $(RUN_WORK)
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) $(COV_RUN_OPTS) -work $(RUN_WORK) -covworkdir $(COV_WORKDIR) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) +MAC_FUNCTIONAL_COVERAGE $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG)
@@ -284,7 +284,7 @@ coverage_merge:
 
 ## Interactive SimVision, no automatic waveform layout.
 gui:
-	mkdir -p $(RUN_DIR)
+	mkdir -p $(RUN_DIR) $(RUN_WORK)
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG) -gui
@@ -292,7 +292,7 @@ gui:
 ## Interactive SimVision with the curated probe layout (simvision.tcl)
 ## and an SHM waveform database saved in the run folder.
 gui_waves:
-	mkdir -p $(RUN_DIR)
+	mkdir -p $(RUN_DIR) $(RUN_WORK)
 	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG) -gui -input $(RUN_DIR)/../$(SIMVISION_TCL)
