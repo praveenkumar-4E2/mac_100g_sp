@@ -372,10 +372,14 @@ indago_help:
 	$(INDAGO) -help
 
 ## Verify what THIS xrun installation supports for Indago (do not guess).
+## Dumps the authoritative sections of `xrun -help` so the exact database
+## option can be chosen on this host.
 xrun_indago_check:
-	@echo ">> xrun -help: Indago-related options:"
-	@$(XRUN) -help 2>&1 | grep -i indago || \
-	  echo "  (no 'indago' entries in xrun -help on this installation)"
+	@echo ">> xrun -help: '-debug_opts' documentation block:";
+	@$(XRUN) -help 2>&1 | grep -i -A 16 'debug_opts' || echo "  (no '-debug_opts' entry in xrun -help)";
+	@echo "";
+	@echo ">> xrun -help: any lines mentioning indago:";
+	@$(XRUN) -help 2>&1 | grep -i -B 2 -A 8 indago || echo "  (no 'indago' lines in xrun -help)";
 
 ## List every Indago database (ida.db) below the current tree.
 find_db:

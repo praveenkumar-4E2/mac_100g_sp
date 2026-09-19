@@ -94,7 +94,7 @@ def summary(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
     cap = sub.add_parser("capture")
     cap.add_argument("--test", required=True)
     cap.add_argument("--seed", required=True)
@@ -107,6 +107,9 @@ def main() -> int:
     summ.add_argument("--results-dir", required=True)
     summ.set_defaults(func=summary)
     args = parser.parse_args()
+    # Python 3.6 has no `required` kwarg on add_subparsers; enforce here.
+    if not args.command:
+        parser.error("a sub-command is required: capture | summary")
     return args.func(args)
 
 
