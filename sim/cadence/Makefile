@@ -9,8 +9,9 @@
 ##   - logs go under logs/, results under results/, coverage under coverage/
 ##     (all inside this cadence folder, per request)
 ##   - compiled snapshot cache is managed by xrun: check/compile share
-##     ./xcelium.d; every run (run/run_cov/gui) uses a private work library
-##     inside its own run_*/ folder so parallel runs never lock-fight
+##     ./xcelium.d; every run (run/run_cov/gui) uses a private XMLib run
+##     context (locks/snapshots) inside its own run_*/ folder so parallel
+##     runs never lock-fight
 ##
 ## Requires Cadence Xcelium on PATH (xrun, imc) and Python 3.
 ## =====================================================================
@@ -97,13 +98,17 @@ RUN_LOG    = $(RUN_DIR)/$(RUN_ID).log
 RUN_TCL    = $(RUN_DIR)/run.tcl
 # Transaction trace records are appended to the normal UVM test log.
 TXN_LOG    = $(RUN_LOG)
-# Each run uses its OWN xrun work library, living inside its run folder.
-# This makes concurrent invocations (e.g. a GUI and a batch run) fully
-# independent — no contention for the shared xcelium.d used by check/compile.
-# The path must be ABSOLUTE: xrun re-resolves a relative -work relative to its
-# internal run directory (xcelium.d/run.*/*) and the UVM-component sub-compile
-# then fails with PRENOP.
-RUN_WORK ?= $(abspath $(RUN_DIR)/$(WORK))
+# Each run gets its OWN xrun run context (-xmlibdirname), living inside its
+# run folder.  XMLib is where xrun keeps the per-invocation databases: the
+# run.* dirs, .xmlib.lock, and snapshots.  A private XMLib is what makes
+# concurrent invocations (e.g. a GUI and a batch run) fully independent —
+# no contention on the lock that previously hung runs.  The compiled-unit
+# WORK library (./xcelium.d) stays shared so runs reuse the checked cache.
+# Do NOT use -work here: a custom -work breaks the -uvm add-on package bind
+# (*F,WRKBAD) and does not relocate the XMLib lock directory anyway.
+# Absolute path is required (xrun resolves sub-process paths against its
+# internal run directory, so a relative path fails with PRENOP).
+RUN_XMLIB ?= $(abspath $(RUN_DIR)/xmlib)
 RESULT_FILE ?= $(RESULT_DIR)/tests/$(RUN_ID).json
 
 ## --------------------------- Coverage config -----------------------------
@@ -134,10 +139,10 @@ REGRESSION_RESULTS_DIR ?= $(RESULT_DIR)/regression/$(REGRESSION_ID)/tests
 # `make regression REGRESSION_UVM_TIMEOUT=` when running intentional long tests.
 REGRESSION_UVM_TIMEOUT ?= 5000000000
 # Regression runs sequentially, so all tests in one regression share a single
-# work library for fast incremental reuse.  It is kept inside the regression
-# artifacts so it can never collide with an unrelated concurrent run.
-# Absolute for the same reason as RUN_WORK (relative -work breaks in xrun).
-REGRESSION_WORK ?= $(abspath $(RESULT_DIR)/regression/$(REGRESSION_ID)/xcelium.d)
+# XMLib run context for fast incremental reuse.  It is kept inside the
+# regression artifacts so it can never collide with an unrelated concurrent
+# run.  Absolute for the same reason as RUN_XMLIB.
+REGRESSION_XMLIB ?= $(abspath $(RESULT_DIR)/regression/$(REGRESSION_ID)/xmlib)
 
 ## Files/dirs removed by `make clean`
 CLEAN_TARGETS = $(WORK) csrc waves.shm cov_work $(LOG_DIR) $(RESULT_DIR) \
@@ -205,7 +210,7 @@ help:
 	@echo "  PLUSARGS=$(PLUSARGS)  DEFINES=$(DEFINES)  SOURCE_DIR=$(SOURCE_DIR)";
 	@echo "  LOG_DIR=$(LOG_DIR)  RESULT_DIR=$(RESULT_DIR)  COVERAGE_DIR=$(COVERAGE_DIR)";
 	@echo "  ARTIFACT_ROOT=$(ARTIFACT_ROOT)  RUN_TIMESTAMP=$(RUN_TIMESTAMP)";
-	@echo "  RUN_WORK=$(RUN_WORK)  # private xrun work lib per run (parallel-safe)";
+	@echo "  RUN_XMLIB=$(RUN_XMLIB)  # private xrun run-context per run (parallel-safe)";
 	@echo "======================================================================";
 	@echo "";
 
@@ -226,15 +231,15 @@ compile:
 	@echo ">> Elaboration finished. Log: $(COMPILE_LOG)";
 
 ## Batch-mode simulation (no GUI).  xrun compiles, elaborates, and runs in a
-## single invocation into the run's private work library (see RUN_WORK).
+## single invocation into the run's private XMLib context (see RUN_XMLIB).
 run:
 	$(MAKE) --no-print-directory run_existing
 
 ## Prepare the run folder, run the test, and capture a JSON result.
 run_existing:
-	mkdir -p $(RUN_DIR) $(RUN_WORK)
+	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
 	@start_epoch=$$(date +%s); \
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -xmlibdirname $(RUN_XMLIB) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG); sim_status=$$?; \
 	$(PYTHON) mac_result_summary.py capture --test $(TEST) --seed $(SEED) --log $(RUN_LOG) --result $(RESULT_FILE) --start-epoch $$start_epoch; result_status=$$?; \
@@ -250,8 +255,8 @@ smoke:
 ## Xcelium writes cov_work into the per-test run folder; afterwards make
 ## cov_report turns it into HTML (imc).
 run_cov:
-	mkdir -p $(RUN_DIR) $(RUN_WORK)
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) $(COV_RUN_OPTS) -work $(RUN_WORK) -covworkdir $(COV_WORKDIR) \
+	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) $(COV_RUN_OPTS) -xmlibdirname $(RUN_XMLIB) -covworkdir $(COV_WORKDIR) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) +MAC_FUNCTIONAL_COVERAGE $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG)
 	$(PYTHON) mac_result_summary.py capture --test $(TEST) --seed $(SEED) --log $(RUN_LOG) --result $(RESULT_FILE)
@@ -284,16 +289,16 @@ coverage_merge:
 
 ## Interactive SimVision, no automatic waveform layout.
 gui:
-	mkdir -p $(RUN_DIR) $(RUN_WORK)
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
+	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -xmlibdirname $(RUN_XMLIB) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG) -gui
 
 ## Interactive SimVision with the curated probe layout (simvision.tcl)
 ## and an SHM waveform database saved in the run folder.
 gui_waves:
-	mkdir -p $(RUN_DIR) $(RUN_WORK)
-	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -work $(RUN_WORK) \
+	mkdir -p $(RUN_DIR) $(RUN_XMLIB)
+	$(XRUN) $(XRUN_BASE_OPTS) $(DEFINE_OPTS) -xmlibdirname $(RUN_XMLIB) \
 	  +UVM_TESTNAME=$(TEST) +UVM_VERBOSITY=$(VERBOSITY) $(UVM_TIMEOUT_PLUSARG) +MAC_TXN_LOG=$(TXN_LOG) $(PLUSARGS) -seed $(SEED) \
 	  -l $(RUN_LOG) -gui -input $(RUN_DIR)/../$(SIMVISION_TCL)
 
@@ -301,18 +306,19 @@ gui_waves:
 
 ## Run every test listed in $(TESTLIST) (one test name per line,
 ## '#' comments and blank lines ignored). Tests run sequentially and share
-## one work library (REGRESSION_WORK) for incremental reuse across the list.
+## one XMLib run context (REGRESSION_XMLIB) for incremental reuse across the
+## list.  The compiled WORK library itself is always the shared ./xcelium.d.
 regression:
 	@if [ ! -f $(TESTLIST) ]; then \
 	  echo "ERROR: testlist file '$(TESTLIST)' not found."; exit 1; \
 	fi
 	@echo ">> Running regression from $(TESTLIST)";
-	@mkdir -p $(LOG_DIR)/regression $(REGRESSION_RESULTS_DIR) $(REGRESSION_WORK); \
+	@mkdir -p $(LOG_DIR)/regression $(REGRESSION_RESULTS_DIR) $(REGRESSION_XMLIB); \
 	fail=0; \
 	for t in $$(awk '{ sub(/\r$$/, ""); if ($$0 !~ /^[[:space:]]*($$|#)/) print }' $(TESTLIST)); do \
 	  echo ""; \
 	  echo ">> ---- Running test: $$t ----"; \
-	  if $(MAKE) --no-print-directory run_existing TEST=$$t SEED=$(SEED) UVM_TIMEOUT=$(REGRESSION_UVM_TIMEOUT) RUN_ID=$${t}_$(RUN_TIMESTAMP) RUN_WORK=$(REGRESSION_WORK) RESULT_FILE=$(REGRESSION_RESULTS_DIR)/$${t}.json; then \
+	  if $(MAKE) --no-print-directory run_existing TEST=$$t SEED=$(SEED) UVM_TIMEOUT=$(REGRESSION_UVM_TIMEOUT) RUN_ID=$${t}_$(RUN_TIMESTAMP) RUN_XMLIB=$(REGRESSION_XMLIB) RESULT_FILE=$(REGRESSION_RESULTS_DIR)/$${t}.json; then \
 	    echo ">> PASS: $$t"; \
 	  else \
 	    fail=1; \
