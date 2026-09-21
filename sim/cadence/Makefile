@@ -17,12 +17,38 @@
 ##     context (locks/snapshots) inside its own runs/*/ folder so parallel
 ##     runs never lock-fight
 ##
-## Requires Cadence Xcelium on PATH (xrun, imc) and Python 3.
+## Requires access to the shared Cadence installation and Python 3.
+## The Makefile itself selects XCELIUM2209 explicitly; no global PATH edit is required.
 ## =====================================================================
 
-## --------------------------- Tools -----------------------------------
-XRUN  = xrun
-IMC   = imc
+## --------------------------- Cadence project environment -------------------
+## The shared /home/install/cshrc is NOT modified by this Makefile.
+## The project selects one Cadence verification release explicitly so that
+## xrun/Indago/SimVision do not accidentally resolve to older Incisive tools
+## that happen to appear earlier in the shared PATH.
+##
+## Current project baseline:
+##   XCELIUM2209
+##   xrun/xmvlog/xmelab/xmsim : 22.09-s003
+##   Indago                   : XCELIUM2209/bin/indago
+##   SimVision                : XCELIUM2209/tools/bin/simvision
+##
+## Override without editing this file, for example:
+##   make run CADENCE_ROOT=/home/install/XCELIUMXXXX
+CADENCE_ROOT ?= /home/install/XCELIUM2209
+CADENCE_TOOLS ?= $(CADENCE_ROOT)/tools/bin
+CADENCE_TOOLS_LNX86 ?= $(CADENCE_ROOT)/tools.lnx86/bin
+
+## Export only for child processes launched by this Makefile.  This does not
+## modify /home/install/cshrc or the shared filesystem installation.
+export PATH := $(CADENCE_ROOT)/bin:$(CADENCE_TOOLS):$(CADENCE_TOOLS_LNX86):$(PATH)
+
+## Use absolute project-selected executables so PATH ordering cannot silently
+## switch this project's debugger/simulator to INCISIVE152.
+XRUN      ?= $(CADENCE_TOOLS)/xrun
+IMC       ?= $(CADENCE_TOOLS)/imc
+INDAGO    ?= $(CADENCE_ROOT)/bin/indago
+SIMVISION ?= $(CADENCE_TOOLS)/simvision
 ## Python interpreter. Resolved at parse time to the first one that
 ## actually runs (verified via --version), trying in order:
 ##   python3 -> python -> py -> common Windows install paths
@@ -59,7 +85,7 @@ DEFINES ?=
 # resolving to CDNS-1.1d on this host, so the library is pinned via
 # `-uvmhome`.  Override per-invocation if your install differs, e.g.:
 #   make compile UVM_HOME=/some/other/UVM/CDNS-1.2
-UVM_HOME ?= /home/install/XCELIUM2209/tools.lnx86/methodology/UVM/CDNS-1.2
+UVM_HOME ?= $(CADENCE_ROOT)/tools.lnx86/methodology/UVM/CDNS-1.2
 
 # -uvmhome $(UVM_HOME) : link against the pinned UVM library (see UVM_HOME).
 #   The automatic `-uvm` form is avoided: it selected CDNS-1.1d on this host.
@@ -172,7 +198,7 @@ CLEAN_TARGETS = $(WORK) csrc waves.shm cov_work $(LOG_DIR) $(RESULT_DIR) \
 .PHONY: help all check compile run smoke run_cov cov_report coverage \
         coverage_merge gui gui_waves audit regression clean \
         indago indago_db indago_help xrun_indago_check find_db indago_run \
-        open_log open_txns open_waves
+        open_log open_txns open_waves env_check
 
 ## --------------------------- Default / Help ------------------------------
 
@@ -228,6 +254,7 @@ help:
 	@echo "----------------------------------------------------------------------";
 	@echo "Full target reference";
 	@echo "----------------------------------------------------------------------";
+	@echo "  env_check      - verify this project's Cadence/Xcelium tool paths";
 	@echo "  check          - fastest syntax/elaboration-only check (no sim)";
 	@echo "  compile        - compile + elaborate (no sim)";
 	@echo "  run            - batch-mode simulation (compile -> run in one xrun)";
@@ -256,10 +283,57 @@ help:
 	@echo "  LOG_DIR=$(LOG_DIR)  RESULT_DIR=$(RESULT_DIR)  COVERAGE_DIR=$(COVERAGE_DIR)";
 	@echo "  TXN_DIR=$(TXN_DIR)  WAVES_DIR=$(WAVES_DIR)  ARTIFACT_ROOT=$(ARTIFACT_ROOT)";
 	@echo "  RUN_XMLIB=$(RUN_XMLIB)  # private xrun run-context per run (parallel-safe)";
+	@echo "  CADENCE_ROOT=$(CADENCE_ROOT)  # project-selected Cadence release";
+	@echo "  XRUN=$(XRUN)  IMC=$(IMC)";
+	@echo "  INDAGO=$(INDAGO)  SIMVISION=$(SIMVISION)";
 	@echo "  UVM_HOME=$(UVM_HOME)  # pinned UVM install (-uvmhome)";
 	@echo "  DB=            # Indago database to open with 'make indago DB=<path>'";
 	@echo "======================================================================";
 	@echo "";
+
+## --------------------------- Project environment check ---------------------
+
+## Verify the project-local Cadence selection without changing shared installs.
+## This is especially useful on shared machines where /home/install/cshrc
+## exposes both INCISIVE152 and XCELIUM2209.
+env_check:
+	@echo "============================================================"
+	@echo " 100G MAC PROJECT CADENCE ENVIRONMENT"
+	@echo "============================================================"
+	@echo "CADENCE_ROOT : $(CADENCE_ROOT)"
+	@echo "XRUN         : $(XRUN)"
+	@echo "XMVLOG       : $(CADENCE_TOOLS)/xmvlog"
+	@echo "XMELAB       : $(CADENCE_TOOLS)/xmelab"
+	@echo "XMSIM        : $(CADENCE_TOOLS)/xmsim"
+	@echo "INDAGO       : $(INDAGO)"
+	@echo "SIMVISION    : $(SIMVISION)"
+	@echo "IMC          : $(IMC)"
+	@echo "UVM_HOME     : $(UVM_HOME)"
+	@echo ""
+	@echo ">> Xcelium version:"
+	@$(XRUN) -version
+	@echo ""
+	@echo ">> xmvlog version:"
+	@$(CADENCE_TOOLS)/xmvlog -version
+	@echo ""
+	@echo ">> xmelab version:"
+	@$(CADENCE_TOOLS)/xmelab -version
+	@echo ""
+	@echo ">> xmsim version:"
+	@$(CADENCE_TOOLS)/xmsim -version
+	@echo ""
+	@echo ">> SimVision version:"
+	@$(SIMVISION) -version
+	@echo ""
+	@echo ">> Indago help/availability:"
+	@$(INDAGO) -help >/dev/null && echo "Indago: available"
+	@echo ""
+	@echo ">> UVM:"
+	@if [ -d "$(UVM_HOME)" ]; then echo "UVM_HOME: available"; else echo "ERROR: UVM_HOME not found: $(UVM_HOME)"; exit 1; fi
+	@echo ""
+	@echo ">> PATH used by Make recipes starts with:"
+	@echo "$$PATH" | tr ':' '\\n' | head -5
+	@echo "============================================================"
 
 ## --------------------------- Standard flow --------------------------------
 
@@ -469,7 +543,7 @@ open_waves:
 	  echo "ERROR: no waveform found under $(WAVES_DIR)/ (ran 'make gui_waves'?)."; exit 1; \
 	fi; \
 	echo ">> Opening $(LATEST_WAVE) in SimVision"; \
-	simvision "$(LATEST_WAVE)" &
+	$(SIMVISION) "$(LATEST_WAVE)" &
 
 ## --------------------------- Regression ------------------------------------
 
@@ -491,21 +565,3 @@ regression:
 	    echo ">> PASS: $$t"; \
 	  else \
 	    fail=1; \
-	    echo ">> FAIL: $$t"; \
-	  fi; \
-	done; \
-	$(PYTHON) mac_result_summary.py summary --results-dir $(REGRESSION_RESULTS_DIR) > $(LOG_DIR)/regression/$(REGRESSION_ID)_summary.log; summary_status=$$?; \
-	cat $(LOG_DIR)/regression/$(REGRESSION_ID)_summary.log; \
-	echo ""; \
-	if [ $$fail -eq 1 ] || [ $$summary_status -ne 0 ]; then \
-	  echo ">> Regression finished WITH FAILURES."; exit 1; \
-	else \
-	  echo ">> Regression finished, all tests PASSED."; \
-	fi
-
-## --------------------------- Housekeeping -----------------------------------
-
-## Remove all generated simulation artifacts, including every run_* folder.
-## (rm -rf works on Linux/macOS/WSL/Git-Bash; not native cmd.exe)
-clean:
-	rm -rf $(CLEAN_TARGETS)
