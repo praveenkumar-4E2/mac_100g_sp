@@ -565,3 +565,20 @@ regression:
 	    echo ">> PASS: $$t"; \
 	  else \
 	    fail=1; \
+	    echo ">> FAIL: $$t"; \
+	  fi; \
+	done; \
+	$(PYTHON) mac_result_summary.py summary --results-dir $(REGRESSION_RESULTS_DIR) > $(LOG_DIR)/regression/$(REGRESSION_ID)_summary.log; summary_status=$$?; \
+	cat $(LOG_DIR)/regression/$(REGRESSION_ID)_summary.log; \
+	echo ""; \
+	if [ $$fail -eq 1 ] || [ $$summary_status -ne 0 ]; then \
+	  echo ">> Regression finished WITH FAILURES."; exit 1; \
+	else \
+	  echo ">> Regression finished, all tests PASSED."; \
+	fi
+
+## --------------------------- Housekeeping -----------------------------------
+
+## Remove all generated simulation artifacts.
+clean:
+	rm -rf $(CLEAN_TARGETS)
