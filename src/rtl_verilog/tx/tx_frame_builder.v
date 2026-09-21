@@ -57,6 +57,10 @@ module tx_frame_builder #(
       payload_off,
       payload_word,
       fcs_off;
+  // These are deliberately separate from the output-formatting temporaries
+  // above.  Two combinational processes must not write shared procedural
+  // variables: Xcelium can continuously reschedule both blocks at time zero.
+  integer crc_payload_emitted, crc_payload_base, crc_lane, crc_global_byte;
   function [KEEP_WIDTH-1:0] keep_mask;
     input integer count;
     integer index;
@@ -125,17 +129,19 @@ module tx_frame_builder #(
       end
   end
   always @* begin
-    payload_emitted = (beat_index << 6) - PREAMBLE_SFD_OCTETS;
-    if (payload_emitted < 0) payload_emitted = 0;
-    if (payload_emitted > body_len) payload_emitted = body_len;
-    payload_base = payload_emitted >> 6;
-    if (payload_base >= BUFFER_WORDS) payload_base = BUFFER_WORDS - 1;
-    capture_read_addr = payload_base;
-    capture_read_addr_1 = (payload_base + 1 >= BUFFER_WORDS) ? BUFFER_WORDS - 1 : payload_base + 1;
+    crc_payload_emitted = (beat_index << 6) - PREAMBLE_SFD_OCTETS;
+    if (crc_payload_emitted < 0) crc_payload_emitted = 0;
+    if (crc_payload_emitted > body_len) crc_payload_emitted = body_len;
+    crc_payload_base = crc_payload_emitted >> 6;
+    if (crc_payload_base >= BUFFER_WORDS) crc_payload_base = BUFFER_WORDS - 1;
+    capture_read_addr = crc_payload_base;
+    capture_read_addr_1 = (crc_payload_base + 1 >= BUFFER_WORDS) ?
+        BUFFER_WORDS - 1 : crc_payload_base + 1;
     crc_keep = {KEEP_WIDTH{1'b0}};
-    for (lane = 0; lane < KEEP_WIDTH; lane = lane + 1) begin
-      global_byte = (beat_index << 6) + lane;
-      if ((global_byte >= 8) && (global_byte < frame_len - FCS_OCTETS)) crc_keep[lane] = 1'b1;
+    for (crc_lane = 0; crc_lane < KEEP_WIDTH; crc_lane = crc_lane + 1) begin
+      crc_global_byte = (beat_index << 6) + crc_lane;
+      if ((crc_global_byte >= 8) && (crc_global_byte < frame_len - FCS_OCTETS))
+        crc_keep[crc_lane] = 1'b1;
     end
   end
   always @(posedge clk) begin
